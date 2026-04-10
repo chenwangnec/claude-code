@@ -21,9 +21,11 @@ LogoV2.tsx (src/components/LogoV2/)
 
 | 模式 | 触发条件 | 边框 | 说明 |
 |------|---------|------|------|
-| **缩略模式** (Condensed) | 无 Release Notes 且无首次引导 且未强制 | ❌ | 日常启动最常见，仅显示 Clawd + 版本信息 |
+| **缩略模式** (Condensed) | ~~无 Release Notes 且无首次引导~~ | ❌ | **已永久关闭**（2026-04-10），不再进入 |
 | **紧凑模式** (Compact) | 终端宽度 < 70 列 | ✅ | 紫色圆角边框，内容居中 |
-| **完整模式** (Full) | 有 Release Notes 或首次引导或强制 | ✅ | 紫色圆角边框，双栏布局 + 信息流 |
+| **完整模式** (Full) | 默认路径 | ✅ | 紫色圆角边框，双栏布局 + 信息流 |
+
+> **注**：缩略模式已在 `LogoV2.tsx` 中永久关闭（`isCondensedMode = false`），所有启动都走完整模式或紧凑模式。
 
 ### 模式判断逻辑（源码：`src/components/LogoV2/LogoV2.tsx`）
 
@@ -87,3 +89,33 @@ const isCondensedMode =
 **原因**：`getLayoutMode(columns)` 在终端 < 70 列时切换到 compact 模式。
 
 **参考**：`src/utils/logoV2Utils.ts` — `getLayoutMode(columns: number): LayoutMode`
+
+### 问题：Recent Activity 显示 "No recent activity"
+
+**原因**：`src/setup.ts` 中 `getRecentActivity()` 只在 `hasReleaseNotes` 为 true 时才调用。日常启动（无新 Release Notes）时，`cachedActivity` 始终为空数组。
+
+**修复**（`src/setup.ts` 第 383-395 行）：
+
+```diff
+  if (!isBareMode()) {
+-   const { hasReleaseNotes } = await checkForReleaseNotes(
+-     getGlobalConfig().lastReleaseNotesSeen,
+-   )
+-   if (hasReleaseNotes) {
+-     await getRecentActivity()
+-   }
++   // Populate release notes cache (side effect: fetches changelog if needed)
++   void checkForReleaseNotes(getGlobalConfig().lastReleaseNotesSeen)
++   // Load recent activity unconditionally (not tied to release notes)
++   try {
++     await getRecentActivity()
++   } catch (error) {
++     logError('Failed to load recent activity:', error)
++   }
+  }
+```
+
+**关键变化**：
+1. `getRecentActivity()` 从 `if (hasReleaseNotes)` 块中移出，无条件调用
+2. 增加 try-catch 防止损坏的会话文件阻塞启动
+3. `checkForReleaseNotes` 改为 `void` 调用（保留 cache 填充的副作用，但不阻塞等待结果）
