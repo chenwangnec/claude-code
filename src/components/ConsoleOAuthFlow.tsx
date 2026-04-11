@@ -55,6 +55,15 @@ type OAuthStatus =
       opusModel: string
       activeField: 'base_url' | 'api_key' | 'haiku_model' | 'sonnet_model' | 'opus_model'
     } // Gemini Generate Content API platform
+  | {
+      state: 'alibaba_coding_plan'
+      baseUrl: string
+      apiKey: string
+      opusModel: string
+      sonnetModel: string
+      haikuModel: string
+      activeField: 'api_key' | 'base_url' | 'opus_model' | 'sonnet_model' | 'haiku_model'
+    } // Alibaba Cloud Bailian Coding Plan (OpenAI compatible)
   | { state: 'ready_to_start' } // Flow started, waiting for browser to open
   | { state: 'waiting_for_login'; url: string } // Browser opened, waiting for user to login
   | { state: 'creating_api_key' } // Got access token, creating API key
@@ -488,6 +497,16 @@ function OAuthStatusMessage({
                 {
                   label: (
                     <Text>
+                      阿里云百炼 Coding Plan ·{' '}
+                      <Text dimColor>Anthropic 兼容 API</Text>
+                      {'\n'}
+                    </Text>
+                  ),
+                  value: 'alibaba_coding_plan',
+                },
+                {
+                  label: (
+                    <Text>
                       Claude account with subscription ·{' '}
                       <Text dimColor>Pro, Max, Team, or Enterprise</Text>
                       {process.env.USER_TYPE === 'ant' && (
@@ -562,6 +581,17 @@ function OAuthStatusMessage({
                     sonnetModel: process.env.GEMINI_DEFAULT_SONNET_MODEL ?? '',
                     opusModel: process.env.GEMINI_DEFAULT_OPUS_MODEL ?? '',
                     activeField: 'base_url',
+                  })
+                } else if (value === 'alibaba_coding_plan') {
+                  logEvent('tengu_alibaba_coding_plan_selected', {})
+                  setOAuthStatus({
+                    state: 'alibaba_coding_plan',
+                    baseUrl: process.env.ANTHROPIC_BASE_URL ?? 'https://coding.dashscope.aliyuncs.com/apps/anthropic',
+                    apiKey: process.env.ANTHROPIC_AUTH_TOKEN ?? '',
+                    opusModel: process.env.ANTHROPIC_DEFAULT_OPUS_MODEL ?? 'qwen3-max-2026-01-23',
+                    sonnetModel: process.env.ANTHROPIC_DEFAULT_SONNET_MODEL ?? 'qwen3.6-plus',
+                    haikuModel: process.env.ANTHROPIC_DEFAULT_HAIKU_MODEL ?? 'glm-5',
+                    activeField: 'api_key',
                   })
                 } else if (value === 'platform') {
                   logEvent('tengu_oauth_platform_selected', {})
@@ -1270,6 +1300,260 @@ function OAuthStatusMessage({
             </Box>
             <Text dimColor>
               ↑↓/Tab to switch · Enter on last field to save · Esc to go back
+            </Text>
+          </Box>
+        )
+      }
+
+    case 'alibaba_coding_plan':
+      {
+        type AlibabaField = 'api_key' | 'base_url' | 'opus_model' | 'sonnet_model' | 'haiku_model'
+        const ALIBABA_FIELDS: AlibabaField[] = [
+          'api_key',
+          'base_url',
+          'opus_model',
+          'sonnet_model',
+          'haiku_model',
+        ]
+
+        // 阿里云百炼模型映射（Claude 家族 → 百炼模型）
+        const BAILIAN_MODEL_MAP = {
+          opus: ['qwen3-max-2026-01-23', 'qwen3.6-plus'],
+          sonnet: ['qwen3.6-plus', 'qwen3-coder-next', 'kimi-k2.5'],
+          haiku: ['glm-5', 'MiniMax-M2.5', 'qwen3-coder-plus'],
+        }
+
+        const al = oauthStatus as {
+          state: 'alibaba_coding_plan'
+          activeField: AlibabaField
+          baseUrl: string
+          apiKey: string
+          opusModel: string
+          sonnetModel: string
+          haikuModel: string
+        }
+        const { activeField, baseUrl, apiKey, opusModel, sonnetModel, haikuModel } = al
+        const alibabaDisplayValues: Record<AlibabaField, string> = {
+          api_key: apiKey,
+          base_url: baseUrl,
+          opus_model: opusModel,
+          sonnet_model: sonnetModel,
+          haiku_model: haikuModel,
+        }
+
+        const [alibabaInputValue, setAlibabaInputValue] = useState(() => alibabaDisplayValues[activeField])
+        const [alibabaInputCursorOffset, setAlibabaInputCursorOffset] = useState(
+          () => alibabaDisplayValues[activeField].length,
+        )
+
+        const buildAlibabaState = useCallback(
+          (field: AlibabaField, value: string, newActive?: AlibabaField) => {
+            const s = {
+              state: 'alibaba_coding_plan' as const,
+              activeField: newActive ?? activeField,
+              baseUrl,
+              apiKey,
+              opusModel,
+              sonnetModel,
+              haikuModel,
+            }
+            switch (field) {
+              case 'api_key':
+                return { ...s, apiKey: value }
+              case 'base_url':
+                return { ...s, baseUrl: value }
+              case 'opus_model':
+                return { ...s, opusModel: value }
+              case 'sonnet_model':
+                return { ...s, sonnetModel: value }
+              case 'haiku_model':
+                return { ...s, haikuModel: value }
+            }
+          },
+          [activeField, baseUrl, apiKey, opusModel, sonnetModel, haikuModel],
+        )
+
+        const switchAlibabaField = useCallback(
+          (target: AlibabaField) => {
+            setOAuthStatus(buildAlibabaState(activeField, alibabaInputValue, target))
+            setAlibabaInputValue(alibabaDisplayValues[target] ?? '')
+            setAlibabaInputCursorOffset((alibabaDisplayValues[target] ?? '').length)
+          },
+          [activeField, alibabaInputValue, alibabaDisplayValues, buildAlibabaState, setOAuthStatus],
+        )
+
+        const doAlibabaSave = useCallback(() => {
+          const finalVals = { ...alibabaDisplayValues, [activeField]: alibabaInputValue }
+          const env: Record<string, string> = {}
+
+          if (finalVals.base_url) {
+            try {
+              new URL(finalVals.base_url)
+            } catch {
+              setOAuthStatus({
+                state: 'error',
+                message: '无效的 Base URL：请输入完整的 URL（如 https://coding.dashscope.aliyuncs.com/apps/anthropic）',
+                toRetry: {
+                  state: 'alibaba_coding_plan',
+                  baseUrl: '',
+                  apiKey: '',
+                  opusModel: finalVals.opus_model,
+                  sonnetModel: finalVals.sonnet_model,
+                  haikuModel: finalVals.haiku_model,
+                  activeField: 'base_url',
+                },
+              })
+              return
+            }
+            env.ANTHROPIC_BASE_URL = finalVals.base_url
+          }
+
+          if (finalVals.api_key) env.ANTHROPIC_AUTH_TOKEN = finalVals.api_key
+          if (finalVals.opus_model) env.ANTHROPIC_DEFAULT_OPUS_MODEL = finalVals.opus_model
+          if (finalVals.sonnet_model) env.ANTHROPIC_DEFAULT_SONNET_MODEL = finalVals.sonnet_model
+          if (finalVals.haiku_model) env.ANTHROPIC_DEFAULT_HAIKU_MODEL = finalVals.haiku_model
+
+          const { error } = updateSettingsForSource('userSettings', {
+            modelType: 'anthropic' as any,
+            env,
+          } as any)
+          if (error) {
+            setOAuthStatus({
+              state: 'error',
+              message: '保存设置失败，请重试。',
+              toRetry: {
+                state: 'alibaba_coding_plan',
+                baseUrl: finalVals.base_url ?? '',
+                apiKey: finalVals.api_key ?? '',
+                opusModel: finalVals.opus_model ?? 'qwen3-max-2026-01-23',
+                sonnetModel: finalVals.sonnet_model ?? 'qwen3.6-plus',
+                haikuModel: finalVals.haiku_model ?? 'glm-5',
+                activeField: 'api_key',
+              },
+            })
+          } else {
+            for (const [k, v] of Object.entries(env)) process.env[k] = v
+            setOAuthStatus({ state: 'success' })
+            void onDone()
+          }
+        }, [activeField, alibabaInputValue, alibabaDisplayValues, setOAuthStatus, onDone])
+
+        const handleAlibabaEnter = useCallback(() => {
+          const idx = ALIBABA_FIELDS.indexOf(activeField)
+          if (idx === ALIBABA_FIELDS.length - 1) {
+            setOAuthStatus(buildAlibabaState(activeField, alibabaInputValue))
+            doAlibabaSave()
+          } else {
+            const next = ALIBABA_FIELDS[idx + 1]!
+            setOAuthStatus(buildAlibabaState(activeField, alibabaInputValue, next))
+            setAlibabaInputValue(alibabaDisplayValues[next] ?? '')
+            setAlibabaInputCursorOffset((alibabaDisplayValues[next] ?? '').length)
+          }
+        }, [activeField, alibabaInputValue, buildAlibabaState, doAlibabaSave, alibabaDisplayValues, setOAuthStatus])
+
+        useKeybinding(
+          'tabs:next',
+          () => {
+            const idx = ALIBABA_FIELDS.indexOf(activeField)
+            if (idx < ALIBABA_FIELDS.length - 1) {
+              setOAuthStatus(buildAlibabaState(activeField, alibabaInputValue, ALIBABA_FIELDS[idx + 1]))
+              setAlibabaInputValue(alibabaDisplayValues[ALIBABA_FIELDS[idx + 1]!] ?? '')
+              setAlibabaInputCursorOffset((alibabaDisplayValues[ALIBABA_FIELDS[idx + 1]!] ?? '').length)
+            }
+          },
+          { context: 'FormField' },
+        )
+        useKeybinding(
+          'tabs:previous',
+          () => {
+            const idx = ALIBABA_FIELDS.indexOf(activeField)
+            if (idx > 0) {
+              setOAuthStatus(buildAlibabaState(activeField, alibabaInputValue, ALIBABA_FIELDS[idx - 1]))
+              setAlibabaInputValue(alibabaDisplayValues[ALIBABA_FIELDS[idx - 1]!] ?? '')
+              setAlibabaInputCursorOffset((alibabaDisplayValues[ALIBABA_FIELDS[idx - 1]!] ?? '').length)
+            }
+          },
+          { context: 'FormField' },
+        )
+        useKeybinding(
+          'confirm:no',
+          () => {
+            setOAuthStatus({ state: 'idle' })
+          },
+          { context: 'Confirmation' },
+        )
+
+        const alibabaColumns = useTerminalSize().columns - 20
+
+        const renderAlibabaRow = (
+          field: AlibabaField,
+          label: string,
+          opts?: { mask?: boolean },
+        ) => {
+          const active = activeField === field
+          const val = alibabaDisplayValues[field]
+          return (
+            <Box>
+              <Text
+                backgroundColor={active ? 'suggestion' : undefined}
+                color={active ? 'inverseText' : undefined}
+              >
+                {` ${label} `}
+              </Text>
+              <Text> </Text>
+              {active ? (
+                <Box flexGrow={1}>
+                  <TextInput
+                    value={alibabaInputValue}
+                    onChange={setAlibabaInputValue}
+                    onSubmit={handleAlibabaEnter}
+                    cursorOffset={alibabaInputCursorOffset}
+                    onChangeCursorOffset={setAlibabaInputCursorOffset}
+                    columns={alibabaColumns}
+                    mask={opts?.mask ? '*' : undefined}
+                    focus={true}
+                  />
+                  <Text color="accent">▌</Text>
+                </Box>
+              ) : val ? (
+                <Text color="success">
+                  {opts?.mask
+                    ? val.slice(0, 8) + '\u00b7'.repeat(Math.max(0, val.length - 8))
+                    : val}
+                </Text>
+              ) : (
+                <Text dimColor>（按 Enter 输入）</Text>
+              )}
+            </Box>
+          )
+        }
+
+        const borderLine = (active: boolean) => (
+          <Text color={active ? 'accent' : 'dim'}>{'─'.repeat(alibabaColumns + 12)}</Text>
+        )
+
+        return (
+          <Box flexDirection="column" gap={1}>
+            <Text bold>阿里云百炼 Coding Plan</Text>
+            <Text dimColor>
+              配置阿里云百炼 Anthropic 兼容端点。已自动映射 Claude 三大模型家族到百炼模型。
+            </Text>
+            <Box flexDirection="column" gap={0}>
+              {renderAlibabaRow('api_key', 'API 密钥', { mask: true })}
+              {borderLine(activeField === 'api_key')}
+              {renderAlibabaRow('base_url', 'Base URL')}
+              {borderLine(activeField === 'base_url')}
+              {renderAlibabaRow('opus_model', 'Opus  （最强推理）')}
+              {borderLine(activeField === 'opus_model')}
+              {renderAlibabaRow('sonnet_model', 'Sonnet（均衡通用）')}
+              {borderLine(activeField === 'sonnet_model')}
+              {renderAlibabaRow('haiku_model', 'Haiku （快速轻量）')}
+            </Box>
+            <Text dimColor>
+              可用模型：qwen3.6-plus · qwen3.5-plus · qwen3-max · qwen3-coder-next · qwen3-coder-plus · glm-5 · glm-4.7 · kimi-k2.5 · MiniMax-M2.5
+            </Text>
+            <Text dimColor>
+              ↑↓/Tab 切换字段 · 最后一字段按 Enter 保存 · Esc 返回
             </Text>
           </Box>
         )
