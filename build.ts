@@ -118,7 +118,47 @@ const cliBun = join(outdir, 'cli-bun.js')
 const cliNode = join(outdir, 'cli-node.js')
 
 await writeFile(cliBun, '#!/usr/bin/env bun\nimport "./cli.js"\n')
-await writeFile(cliNode, '#!/usr/bin/env node\nimport "./cli.js"\n')
+
+// Node.js entry needs a Bun API polyfill because Bun.build({ target: 'bun' })
+// emits globalThis.Bun references (e.g. Bun.$ shell tag in computer-use-input,
+// Bun.which in chunk-ys6smqg9) that crash at import time under plain Node.js.
+const NODE_BUN_POLYFILL = `#!/usr/bin/env node
+// Bun API polyfill for Node.js runtime
+if (typeof globalThis.Bun === "undefined") {
+  const { execFileSync } = await import("child_process");
+  const { resolve, delimiter } = await import("path");
+  const { accessSync, constants: { X_OK } } = await import("fs");
+  function which(bin) {
+    const isWin = process.platform === "win32";
+    const pathExt = isWin ? (process.env.PATHEXT || ".EXE").split(";") : [""];
+    for (const dir of (process.env.PATH || "").split(delimiter)) {
+      for (const ext of pathExt) {
+        const candidate = resolve(dir, bin + ext);
+        try { accessSync(candidate, X_OK); return candidate; } catch {}
+      }
+    }
+    return null;
+  }
+  // Bun.$ is the shell template tag (e.g. $\`osascript ...\`). Only used by
+  // computer-use-input/darwin — stub it so the top-level destructuring
+  // \`var { $ } = globalThis.Bun\` doesn't crash.
+  function $(parts, ...args) {
+    throw new Error("Bun.$ shell API is not available in Node.js. Use Bun runtime for this feature.");
+  }
+  function hash(data, seed) {
+    let h = ((seed || 0) ^ 0x811c9dc5) >>> 0;
+    for (let i = 0; i < data.length; i++) {
+      h ^= data.charCodeAt(i);
+      h = Math.imul(h, 0x01000193) >>> 0;
+    }
+    return h;
+  }
+  globalThis.Bun = { which, $, hash };
+}
+import "./cli.js"
+`
+await writeFile(cliNode, NODE_BUN_POLYFILL)
+// NOTE: when new Bun-specific globals appear in bundled output, add them here.
 
 // Make both executable
 const { chmodSync } = await import('fs')

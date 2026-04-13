@@ -29,6 +29,7 @@ const mockRootEnd = mock(() => {})
 // Mock LangfuseOtelSpanAttributes (re-exported from @langfuse/core)
 const mockLangfuseOtelSpanAttributes: Record<string, string> = {
   TRACE_SESSION_ID: 'session.id',
+  TRACE_USER_ID: 'user.id',
   OBSERVATION_TYPE: 'observation.type',
   OBSERVATION_INPUT: 'observation.input',
   OBSERVATION_OUTPUT: 'observation.output',
@@ -72,6 +73,14 @@ mock.module('@langfuse/tracing', () => ({
 // Mock debug logger
 mock.module('src/utils/debug.js', () => ({
   logForDebugging: mock(() => {}),
+}))
+
+// Mock user data — resolveLangfuseUserId uses getCoreUserData().email and .deviceId
+mock.module('src/utils/user.js', () => ({
+  getCoreUserData: mock(() => ({
+    email: 'test-device-id',
+    deviceId: 'test-device-id',
+  })),
 }))
 
 describe('Langfuse integration', () => {
@@ -275,6 +284,48 @@ describe('Langfuse integration', () => {
       }))
       expect(mockRootEnd).toHaveBeenCalled()
     })
+
+    test('includes cache tokens in usageDetails when provided', async () => {
+      process.env.LANGFUSE_PUBLIC_KEY = 'pk-test'
+      process.env.LANGFUSE_SECRET_KEY = 'sk-test'
+      const { createTrace, recordLLMObservation } = await import('../tracing.js')
+      const span = createTrace({ sessionId: 's1', model: 'claude-3', provider: 'firstParty' })
+      mockStartObservation.mockClear()
+      mockRootUpdate.mockClear()
+      recordLLMObservation(span, {
+        model: 'claude-3',
+        provider: 'firstParty',
+        input: [],
+        output: [],
+        usage: { input_tokens: 10000, output_tokens: 50, cache_creation_input_tokens: 2000, cache_read_input_tokens: 7000 },
+      })
+      expect(mockRootUpdate).toHaveBeenCalledWith(expect.objectContaining({
+        usageDetails: {
+          input: 19000, // 10000 + 2000 + 7000
+          output: 50,
+          cache_read: 7000,
+          cache_creation: 2000,
+        },
+      }))
+    })
+
+    test('omits cache fields when not provided', async () => {
+      process.env.LANGFUSE_PUBLIC_KEY = 'pk-test'
+      process.env.LANGFUSE_SECRET_KEY = 'sk-test'
+      const { createTrace, recordLLMObservation } = await import('../tracing.js')
+      const span = createTrace({ sessionId: 's1', model: 'claude-3', provider: 'firstParty' })
+      mockRootUpdate.mockClear()
+      recordLLMObservation(span, {
+        model: 'claude-3',
+        provider: 'firstParty',
+        input: [],
+        output: [],
+        usage: { input_tokens: 100, output_tokens: 20 },
+      })
+      expect(mockRootUpdate).toHaveBeenCalledWith(expect.objectContaining({
+        usageDetails: { input: 100, output: 20 },
+      }))
+    })
   })
 
   describe('recordToolObservation', () => {
@@ -474,6 +525,70 @@ describe('Langfuse integration', () => {
       const secondArg = calls[0]?.[1] as Record<string, unknown> | undefined
       const metadata = (secondArg?.metadata ?? {}) as Record<string, unknown>
       expect(metadata).not.toHaveProperty('querySource')
+    })
+  })
+
+  describe('createTrace with username', () => {
+    test('sets user.id attribute when username is provided', async () => {
+      process.env.LANGFUSE_PUBLIC_KEY = 'pk-test'
+      process.env.LANGFUSE_SECRET_KEY = 'sk-test'
+      mockSetAttribute.mockClear()
+      const { createTrace } = await import('../tracing.js')
+      const span = createTrace({
+        sessionId: 's1',
+        model: 'claude-3',
+        provider: 'firstParty',
+        username: 'user@example.com',
+      })
+      expect(span).not.toBeNull()
+      expect(mockSetAttribute).toHaveBeenCalledWith('user.id', 'user@example.com')
+    })
+
+    test('falls back to LANGFUSE_USER_ID env when username not provided', async () => {
+      process.env.LANGFUSE_PUBLIC_KEY = 'pk-test'
+      process.env.LANGFUSE_SECRET_KEY = 'sk-test'
+      process.env.LANGFUSE_USER_ID = 'env-user@test.com'
+      mockSetAttribute.mockClear()
+      const { createTrace } = await import('../tracing.js')
+      const span = createTrace({
+        sessionId: 's1',
+        model: 'claude-3',
+        provider: 'firstParty',
+      })
+      expect(span).not.toBeNull()
+      expect(mockSetAttribute).toHaveBeenCalledWith('user.id', 'env-user@test.com')
+      delete process.env.LANGFUSE_USER_ID
+    })
+
+    test('falls back to deviceId when neither username nor env is provided', async () => {
+      process.env.LANGFUSE_PUBLIC_KEY = 'pk-test'
+      process.env.LANGFUSE_SECRET_KEY = 'sk-test'
+      delete process.env.LANGFUSE_USER_ID
+      mockSetAttribute.mockClear()
+      const { createTrace } = await import('../tracing.js')
+      createTrace({ sessionId: 's1', model: 'claude-3', provider: 'firstParty' })
+      // Falls back to getCoreUserData().deviceId (mocked as 'test-device-id')
+      expect(mockSetAttribute).toHaveBeenCalledWith('user.id', 'test-device-id')
+    })
+
+    test('username takes precedence over LANGFUSE_USER_ID env', async () => {
+      process.env.LANGFUSE_PUBLIC_KEY = 'pk-test'
+      process.env.LANGFUSE_SECRET_KEY = 'sk-test'
+      process.env.LANGFUSE_USER_ID = 'env-user@test.com'
+      mockSetAttribute.mockClear()
+      const { createTrace } = await import('../tracing.js')
+      createTrace({
+        sessionId: 's1',
+        model: 'claude-3',
+        provider: 'firstParty',
+        username: 'param-user@test.com',
+      })
+      const userIdCalls = mockSetAttribute.mock.calls.filter(
+        (call: unknown[]) => Array.isArray(call) && call[0] === 'user.id',
+      )
+      expect(userIdCalls.length).toBe(1)
+      expect((userIdCalls[0] as unknown[])[1]).toBe('param-user@test.com')
+      delete process.env.LANGFUSE_USER_ID
     })
   })
 
