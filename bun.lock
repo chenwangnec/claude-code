@@ -6,7 +6,7 @@
       "name": "claude-code-best",
       "dependencies": {
         "@agentclientprotocol/sdk": "^0.19.0",
-        "@claude-code-best/mcp-chrome-bridge": "^2.0.7",
+        "@claude-code-best/mcp-chrome-bridge": "^2.0.8",
         "ws": "^8.20.0",
       },
       "devDependencies": {
@@ -15,6 +15,7 @@
         "@ant/computer-use-input": "workspace:*",
         "@ant/computer-use-mcp": "workspace:*",
         "@ant/computer-use-swift": "workspace:*",
+        "@ant/model-provider": "workspace:*",
         "@anthropic-ai/bedrock-sdk": "^0.26.4",
         "@anthropic-ai/claude-agent-sdk": "^0.2.87",
         "@anthropic-ai/foundry-sdk": "^0.2.3",
@@ -183,6 +184,14 @@
         "wrap-ansi": "^10.0.0",
       },
     },
+    "packages/@ant/model-provider": {
+      "name": "@ant/model-provider",
+      "version": "1.0.0",
+      "dependencies": {
+        "@anthropic-ai/sdk": "^0.80.0",
+        "openai": "^6.33.0",
+      },
+    },
     "packages/agent-tools": {
       "name": "@claude-code-best/agent-tools",
       "version": "1.0.0",
@@ -268,6 +277,8 @@
     "@ant/computer-use-mcp": ["@ant/computer-use-mcp@workspace:packages/@ant/computer-use-mcp"],
 
     "@ant/computer-use-swift": ["@ant/computer-use-swift@workspace:packages/@ant/computer-use-swift"],
+
+    "@ant/model-provider": ["@ant/model-provider@workspace:packages/@ant/model-provider"],
 
     "@anthropic-ai/bedrock-sdk": ["@anthropic-ai/bedrock-sdk@0.26.4", "https://registry.npmmirror.com/@anthropic-ai/bedrock-sdk/-/bedrock-sdk-0.26.4.tgz", { "dependencies": { "@anthropic-ai/sdk": ">=0.50.3 <1", "@aws-crypto/sha256-js": "^4.0.0", "@aws-sdk/client-bedrock-runtime": "^3.797.0", "@aws-sdk/credential-providers": "^3.796.0", "@smithy/eventstream-serde-node": "^2.0.10", "@smithy/fetch-http-handler": "^5.0.4", "@smithy/protocol-http": "^3.0.6", "@smithy/signature-v4": "^3.1.1", "@smithy/smithy-client": "^2.1.9", "@smithy/types": "^2.3.4", "@smithy/util-base64": "^2.0.0" } }, "sha512-0Z2NY3T2wnzT9esRit6BiWpQXvL+F2b3z3Z9in3mXh7MDf122rVi2bcPowQHmo9ITXAPJmv/3H3t0V1z3Fugfw=="],
 
@@ -449,7 +460,7 @@
 
     "@claude-code-best/builtin-tools": ["@claude-code-best/builtin-tools@workspace:packages/builtin-tools"],
 
-    "@claude-code-best/mcp-chrome-bridge": ["@claude-code-best/mcp-chrome-bridge@2.0.7", "https://registry.npmmirror.com/@claude-code-best/mcp-chrome-bridge/-/mcp-chrome-bridge-2.0.7.tgz", { "dependencies": { "@fastify/cors": "^11.0.1", "@modelcontextprotocol/sdk": "^1.11.0", "chalk": "^5.4.1", "chrome-mcp-shared": "^1.0.2", "commander": "^13.1.0", "fastify": "^5.3.2", "is-admin": "^4.0.0", "pino": "^9.6.0", "uuid": "^11.1.0" }, "bin": { "mcp-chrome-bridge": "dist/cli.js", "mcp-chrome-stdio": "dist/mcp/mcp-server-stdio.js" } }, "sha512-gb64+Ga6li3A8Ll9NKV+ePBn5/U0fccCdrH43tGYveLKZIZxURz8cbY+Z3BdbTdYSPVdFXtfUlp3TMxu4OT5gg=="],
+    "@claude-code-best/mcp-chrome-bridge": ["@claude-code-best/mcp-chrome-bridge@2.0.8", "https://registry.npmmirror.com/@claude-code-best/mcp-chrome-bridge/-/mcp-chrome-bridge-2.0.8.tgz", { "dependencies": { "@fastify/cors": "^11.0.1", "@modelcontextprotocol/sdk": "^1.11.0", "chalk": "^5.4.1", "chrome-mcp-shared": "^1.0.2", "commander": "^13.1.0", "fastify": "^5.3.2", "is-admin": "^4.0.0", "pino": "^9.6.0", "uuid": "^11.1.0" }, "bin": { "mcp-chrome-bridge": "dist/cli.js", "mcp-chrome-stdio": "dist/mcp/mcp-server-stdio.js" } }, "sha512-f7J1e4PQ6qxXzdHwL7QRrMZ4lPfD/L1MWxWDbyHmHY7jaW2GL6WcArKpk/fApg3V/q0racqUWzXHQdpE/HJZqg=="],
 
     "@claude-code-best/mcp-client": ["@claude-code-best/mcp-client@workspace:packages/mcp-client"],
 

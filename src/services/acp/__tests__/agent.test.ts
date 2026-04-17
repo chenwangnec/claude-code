@@ -20,9 +20,13 @@ mock.module('../../../tools.js', () => ({
 
 mock.module('../../../Tool.js', () => ({
   getEmptyToolPermissionContext: mock(() => ({})),
+  toolMatchesName: mock(() => false),
+  findToolByName: mock(() => undefined),
+  filterToolProgressMessages: mock(() => []),
+  buildTool: mock((def: any) => def),
 }))
 
-mock.module('../../../utils/config.js', () => ({
+mock.module('src/utils/config.ts', () => ({
   enableConfigs: mock(() => {}),
 }))
 
