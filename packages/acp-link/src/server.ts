@@ -22,6 +22,8 @@ export interface ServerConfig {
   https?: boolean;
   /** Default permission mode for new sessions (e.g. "auto", "default", "bypassPermissions") */
   permissionMode?: string;
+  /** Channel group ID for RCS registration */
+  group?: string;
 }
 
 // Pending permission request
@@ -608,11 +610,16 @@ export async function startServer(config: ServerConfig): Promise<void> {
   // Initialize RCS upstream client if configured
   const rcsUrl = process.env.ACP_RCS_URL;
   const rcsToken = process.env.ACP_RCS_TOKEN;
+  const rcsGroup = config.group || process.env.ACP_RCS_GROUP;
+  if (rcsGroup && !/^[a-zA-Z0-9_-]+$/.test(rcsGroup)) {
+    throw new Error(`Invalid ACP_RCS_GROUP "${rcsGroup}": only letters, digits, hyphens, and underscores are allowed`);
+  }
   if (rcsUrl) {
     rcsUpstream = new RcsUpstreamClient({
       rcsUrl,
       apiToken: rcsToken || "",
       agentName: command,
+      channelGroupId: rcsGroup || undefined,
       maxSessions: 1,
     });
 
@@ -876,20 +883,16 @@ export async function startServer(config: ServerConfig): Promise<void> {
     authEnabled: !!AUTH_TOKEN,
   }, "started");
 
+  // Graceful shutdown — close RCS upstream
+  const shutdown = async () => {
+    if (rcsUpstream) {
+      await rcsUpstream.close();
+    }
+    process.exit(0);
+  };
+  process.on("SIGINT", shutdown);
+  process.on("SIGTERM", shutdown);
+
   // Keep the server running
   await new Promise(() => {});
 }
-
-// Graceful shutdown — close RCS upstream on process exit
-process.on("SIGINT", async () => {
-  if (rcsUpstream) {
-    await rcsUpstream.close();
-  }
-  process.exit(0);
-});
-process.on("SIGTERM", async () => {
-  if (rcsUpstream) {
-    await rcsUpstream.close();
-  }
-  process.exit(0);
-});
